@@ -1,0 +1,5 @@
+imageio
+imagetools
+Nuitka
+numpy
+Pillow

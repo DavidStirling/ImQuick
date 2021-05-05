@@ -1,0 +1,683 @@
+# ImQuick - A lightweight scientific image viewer.
+# Copyright(C) 2021 David Stirling
+# Canvas pan/zoom code adapted from https://stackoverflow.com/questions/41656176/tkinter-canvas-zoom-move-pan
+# Drag/drop utilises the tkdnd2 extension https://github.com/petasis/tkdnd
+# and wrapper https://sourceforge.net/projects/tkinterdnd/
+
+import math
+import imageio
+import os
+import re
+import sys
+import numpy as np
+from PIL import Image, ImageTk
+import tkinter as tk
+import tkinter.ttk as ttk
+import tkinter.filedialog as tkfiledialog
+import TkinterDnD2 as tkDnD
+
+__version__ = "0.5 Beta"
+
+SUPPORTED_EXTENSIONS = {".tif", ".tiff", ".gif", ".png", ".jpeg", ".jpg", ".bmp", ".npz", ".itk"}
+ICON_FILE = 'ImQuick.ico'
+
+
+def not_without_file(func):
+    # Decorator to only run a function when a file is already loaded. Arg 0 = self.
+    def wrapper(*args, **kwargs):
+        if args[0].file:
+            func(*args, **kwargs)
+    return wrapper
+
+
+class HideyScrollBar(ttk.Scrollbar):
+    # Scrollbars which auto-hide when not needed.
+    def set(self, mini, maxi):
+        if float(mini) <= 0.0 and float(maxi) >= 1.0:
+            self.grid_remove()
+        else:
+            self.grid()
+            ttk.Scrollbar.set(self, mini, maxi)
+
+
+class ImQuick(tk.Toplevel):
+    # Main GUI window
+    def __init__(self, master, filename=r""):
+        super(ImQuick, self).__init__()
+        self.master = master
+        self.title(f"ImQuick {__version__}")
+        self.iconbitmap(resource_directory(ICON_FILE))
+        self.geometry(f"500x500")
+        self.file = None
+        self.file_list = []
+        self.current_index = 0
+        self.image_data = None
+        self.scaled_image_data = None
+        self.displayed_image = None
+        self.display = None
+        self.zoom_factor = 1
+        self.delta = 1.3
+        self.width = 0
+        self.height = 0
+        self.container = None
+        self.info_popup = None
+        self.display_popup = None
+        self.about_popup = None
+
+        self.min_display_value = tk.IntVar(self, value=0)
+        self.max_display_value = tk.IntVar(self, value=255)
+
+        self.min_display_value.trace("w", self.update_min_display)
+        self.max_display_value.trace("w", self.update_max_display)
+
+        style = ttk.Style()
+        style.configure('mini.TButton', justify='center', width=3, height=1, state='!disabled')
+
+        self.menubar = self.create_menus()
+
+        self.config(menu=self.menubar)
+
+        self.image_frame = ttk.Frame(self)
+        self.canvas = tk.Canvas(self.image_frame)
+        h = HideyScrollBar(self.image_frame, orient=tk.HORIZONTAL)
+        v = HideyScrollBar(self.image_frame, orient=tk.VERTICAL)
+        v.configure(command=self.scroll_y)  # bind scrollbars to the canvas
+        h.configure(command=self.scroll_x)
+        self.canvas.config(xscrollcommand=h.set, yscrollcommand=v.set)
+
+        self.canvas.bind("<Motion>", self.hover_pixel)
+        self.bind("<Motion>", self.no_pixel)
+
+        self.canvas.bind('<Configure>', self.show_image)  # canvas is resized
+        self.canvas.bind('<ButtonPress-1>', self.move_from)
+        self.canvas.bind('<B1-Motion>', self.move_to)
+        self.canvas.bind('<MouseWheel>', self.zoom_mouse)
+        self.protocol('WM_DELETE_WINDOW', self.close)
+
+        # PyCharm will complain, but these binds are needed for drag and drop.
+        self.drop_target_register(tkDnD.DND_FILES)
+        self.dnd_bind('<<Drop>>', self.on_drop)
+
+        self.xyvalue = tk.StringVar(value="-")
+        self.pixelvalue = tk.StringVar(value="-")
+
+        self.statusbar = ttk.Frame(self, borderwidth=1)
+
+        self.open_button = ttk.Button(self.statusbar, style='mini.TButton', text="O", command=self.open_file)
+        self.prev_button = ttk.Button(self.statusbar, style='mini.TButton', text="<", command=self.prev_file)
+        self.next_button = ttk.Button(self.statusbar, style='mini.TButton', text=">", command=self.next_file)
+
+        self.zoomout_button = ttk.Button(self.statusbar, style='mini.TButton', text="-", command=self.zoom_out)
+        self.zoomin_button = ttk.Button(self.statusbar, style='mini.TButton', text="+", command=self.zoom_in)
+
+        self.zoomfull_button = ttk.Button(self.statusbar, style='mini.TButton', text="r", command=self.first_show_image)
+        self.zoomfit_button = ttk.Button(self.statusbar, style='mini.TButton', text="f", command=self.fit_to_window)
+
+        self.autocontrast_button = ttk.Button(self.statusbar, style='mini.TButton', text="", command=self.auto_contrast)
+        self.contrast_button = ttk.Button(self.statusbar, style='mini.TButton', text="c", command=self.adjust_contrast)
+
+        self.open_icon = tk.PhotoImage(file=resource_directory("OpenFile.png"))
+        self.zoomin_icon = tk.PhotoImage(file=resource_directory("Plus.png"))
+        self.zoomout_icon = tk.PhotoImage(file=resource_directory("Minus.png"))
+        self.next_icon = tk.PhotoImage(file=resource_directory("Right.png"))
+        self.prev_icon = tk.PhotoImage(file=resource_directory("Left.png"))
+        self.full_icon = tk.PhotoImage(file=resource_directory("ActualSize.png"))
+        self.fit_icon = tk.PhotoImage(file=resource_directory("FitWindow.png"))
+        self.contrast_icon = tk.PhotoImage(file=resource_directory("Brightness.png"))
+        self.autocontrast_icon = tk.PhotoImage(file=resource_directory("BrightnessAuto.png"))
+
+        self.open_button.config(image=self.open_icon)
+        self.zoomin_button.config(image=self.zoomin_icon)
+        self.zoomout_button.config(image=self.zoomout_icon)
+        self.next_button.config(image=self.next_icon)
+        self.prev_button.config(image=self.prev_icon)
+        self.zoomfull_button.config(image=self.full_icon)
+        self.zoomfit_button.config(image=self.fit_icon)
+        self.contrast_button.config(image=self.contrast_icon)
+        self.autocontrast_button.config(image=self.autocontrast_icon)
+
+        self.statusseparator = ttk.Separator(self.statusbar, orient='vertical')
+
+        self.status_xy = ttk.Label(self.statusbar, textvariable=self.xyvalue, width=15, anchor=tk.CENTER)
+        self.status_pixel = ttk.Label(self.statusbar, textvariable=self.pixelvalue, width=20, anchor=tk.CENTER)
+
+        self.open_button.pack(side=tk.LEFT, padx=(3, 0))
+        self.prev_button.pack(side=tk.LEFT, padx=(3, 0))
+        self.next_button.pack(side=tk.LEFT, padx=(0, 3))
+        self.zoomout_button.pack(side=tk.LEFT, padx=(3, 0))
+        self.zoomin_button.pack(side=tk.LEFT, padx=(0, 3))
+        self.zoomfull_button.pack(side=tk.LEFT, padx=(3, 3))
+        self.zoomfit_button.pack(side=tk.LEFT, padx=(3, 3))
+        self.contrast_button.pack(side=tk.LEFT, padx=(3, 0))
+        self.autocontrast_button.pack(side=tk.LEFT, padx=(0, 3))
+
+        self.status_pixel.pack(side=tk.RIGHT, fill=tk.X)
+        self.statusseparator.pack(side=tk.RIGHT, fill=tk.BOTH)
+        self.status_xy.pack(side=tk.RIGHT, fill=tk.X)
+
+        self.statusbar.pack(fill=tk.X)
+        self.image_frame.pack(fill=tk.BOTH, expand=True)
+
+        self.image_frame.rowconfigure(0, weight=1)
+        self.image_frame.columnconfigure(0, weight=1)
+        v.grid(row=0, column=1, sticky='ns')
+        h.grid(row=1, column=0, sticky='we')
+        self.canvas.grid(row=0, column=0, sticky='nswe')
+
+        self.canvas.update()
+
+        if filename:
+            self.load_image(filename)
+        else:
+            self.canvas.create_text(self.canvas.winfo_width() // 2, self.canvas.winfo_height() // 2,
+                                    anchor=tk.CENTER, text="[Drag a file here to open]")
+
+    def on_drop(self, event):
+        # Open files dropped onto the window
+        line = event.data
+        to_open = []
+        for obj in re.findall('{.*?}', line):
+            to_open.append(obj[1:-1])
+            line = line.replace(obj, "")
+        to_open += line.split(" ")
+        for file in to_open:
+            if os.path.splitext(file)[-1].lower() in SUPPORTED_EXTENSIONS:
+                if self.file:
+                    ImQuick(self.master, file)
+                else:
+                    self.load_image(file)
+
+    def create_menus(self):
+        # Create the menu bar.
+        menubar = tk.Menu(self)
+        menu_file = tk.Menu(menubar, tearoff=False)
+        menu_view = tk.Menu(menubar, tearoff=False)
+        menu_help = tk.Menu(menubar, tearoff=False)
+
+        menu_file.add_command(label='Open Image', command=self.open_file)
+        menu_file.add_separator()
+        menu_file.add_command(label='Previous Image', command=self.prev_file)
+        menu_file.add_command(label='Next Image', command=self.next_file)
+        menu_file.add_separator()
+        menu_file.add_command(label='Close', command=self.close)
+
+        menu_view.add_command(label='Show information', command=self.get_info)
+        menu_view.add_command(label='Adjust brightness', command=self.adjust_contrast)
+
+        menu_help.add_command(label='Documentation', command=docs)
+        menu_help.add_command(label='About ImQuick', command=self.about)
+
+        menubar.add_cascade(menu=menu_file, label='File')
+        menubar.add_cascade(menu=menu_view, label='View')
+        menubar.add_cascade(menu=menu_help, label='Help')
+        return menubar
+
+    def update_min_display(self, *args):
+        # Set minimum displayed pixel intensity
+        min_d = self.min_display_value.get()
+        max_d = self.max_display_value.get()
+        if min_d == 255:
+            self.min_display_value.set(254)
+        if min_d >= max_d:
+            self.max_display_value.set(min_d + 1)
+        self.update_contrast()
+
+    def update_max_display(self,  *args):
+        # Set maximum displayed pixel intensity
+        min_d = self.min_display_value.get()
+        max_d = self.max_display_value.get()
+        if max_d == 0:
+            self.max_display_value.set(1)
+        if min_d >= max_d:
+            self.min_display_value.set(max_d - 1)
+        self.update_contrast()
+
+    def update_contrast(self, *args):
+        # Apply pixel min/max intensity display
+        new_min = self.min_display_value.get()
+        new_max = self.max_display_value.get()
+        temp_data = self.scaled_image_data.copy()
+        temp_data[temp_data < new_min] = new_min
+        temp_data = ((temp_data - new_min) / (new_max - new_min))
+        temp_data[temp_data > 1] = 1
+        self.displayed_image = Image.fromarray((temp_data * 255).astype('uint8'))
+        self.show_image()
+
+    def about(self):
+        # Show 'about' dialog
+        if self.about_popup:
+            self.about_popup.lift()
+        else:
+            self.about_popup = AboutPopup(self)
+
+    @not_without_file
+    def get_info(self):
+        # Show image information dialog
+        if self.info_popup:
+            self.info_popup.lift()
+        else:
+            self.info_popup = InfoPopup(self, self.image_data, self.file)
+
+    @not_without_file
+    def adjust_contrast(self):
+        # Show contrast adjustment dialog
+        if self.display_popup:
+            self.display_popup.lift()
+        else:
+            self.display_popup = DisplayPopup(self, self.file)
+
+    @not_without_file
+    def auto_contrast(self):
+        # Set contrast range to min-max pixel intensity values.
+        self.min_display_value.set(self.scaled_image_data.min())
+        self.max_display_value.set(self.scaled_image_data.max())
+
+    def load_image(self, file):
+        # Open an image
+        self.canvas.delete("all")
+        file = os.path.normpath(file)
+        try:
+            reader = imageio.get_reader(file)
+            self.image_data = reader.get_data(0)
+        except:
+            self.canvas.create_text(self.canvas.winfo_width() // 2, self.canvas.winfo_height() // 2,
+                                    anchor=tk.CENTER, text="[Unable to open file]")
+            self.file = None
+            return
+        maxval = self.image_data.max()
+        if maxval >= 4096:
+            self.scaled_image_data = self.image_data / 265
+        elif maxval >= 1024:
+            self.scaled_image_data = self.image_data / 16
+        elif maxval >= 256:
+            self.scaled_image_data = self.image_data / 4
+        elif maxval <= 1:
+            self.scaled_image_data = self.image_data * 256
+        else:
+            self.scaled_image_data = self.image_data
+        self.scaled_image_data = self.scaled_image_data.astype('uint8')
+        self.displayed_image = Image.fromarray(self.scaled_image_data)
+        self.width, self.height = self.displayed_image.size
+        self.file = file
+        if self.info_popup is not None:
+            self.info_popup.show_info(self.image_data, file)
+        if self.display_popup is not None:
+            self.display_popup.show_info(file)
+        self.first_show_image(loading=True)
+        self.title(f"ImQuick {__version__} - {'...' + file[-100:] if len(file) > 100 else file}")
+        if self.info_popup:
+            self.info_popup.show_info(self.image_data, file)
+
+    @not_without_file
+    def scroll_y(self, *args, **kwargs):
+        # Scroll the canvas in the y axis
+        self.canvas.yview(*args, **kwargs)
+        self.show_image()
+
+    @not_without_file
+    def scroll_x(self, *args, **kwargs):
+        # Scroll the canvas in the x axis
+        self.canvas.xview(*args, **kwargs)
+        self.show_image()
+
+    @not_without_file
+    def move_from(self, event):
+        # Set starting position for mouse drag
+        self.canvas.scan_mark(event.x, event.y)
+
+    @not_without_file
+    def move_to(self, event):
+        # Move canvas to target position when dragging
+        self.canvas.scan_dragto(event.x, event.y, gain=1)
+        self.show_image()
+
+    @not_without_file
+    def zoom_in(self):
+        # Zoom in, towards the center of the canvas
+        i = min(self.canvas.winfo_width(), self.canvas.winfo_height())
+        if i/5 < self.zoom_factor:
+            return
+        self.zoom_factor *= self.delta
+        scale = self.delta
+        self.zoom_image(self.canvas.winfo_width() / 2, self.canvas.winfo_height() / 2, scale)
+
+    @not_without_file
+    def zoom_out(self):
+        # Zoom in, from the center of the canvas
+        i = min(self.width, self.height)
+        if int(i * self.zoom_factor) < 30:
+            return
+        self.zoom_factor /= self.delta
+        scale = 1 / self.delta
+        self.zoom_image(self.canvas.winfo_width() / 2, self.canvas.winfo_height() / 2, scale)
+
+    @not_without_file
+    def zoom_mouse(self, event):
+        # Zoom relative to the mouse cursor
+        x = self.canvas.canvasx(event.x)
+        y = self.canvas.canvasy(event.y)
+        bbox = self.canvas.bbox(self.container)
+        if not bbox[0] < x < bbox[2] or not bbox[1] < y < bbox[3]:
+            return
+        scale = 1.0
+        if event.delta < 0:
+            i = min(self.width, self.height)
+            if int(i * self.zoom_factor) < 30:
+                return
+            self.zoom_factor /= self.delta
+            scale = 1 / self.delta
+        if event.delta > 0:
+            i = min(self.canvas.winfo_width(), self.canvas.winfo_height())
+            if i/5 < self.zoom_factor:
+                return
+            self.zoom_factor *= self.delta
+            scale = self.delta
+        self.zoom_image(x, y, scale)
+
+    @not_without_file
+    def zoom_image(self, x, y, scale):
+        # Apply a zoom transform
+        self.canvas.scale(self.container, x, y, scale, scale)  # Resize the bounding box too
+        self.show_image()
+
+    @not_without_file
+    def first_show_image(self, event=None, loading=False):
+        # Setup display of an image for the first time, (or reset pan/zoom).
+        init_x = (self.canvas.winfo_width() // 2) - (self.width // 2)
+        init_y = (self.canvas.winfo_height() // 2) - (self.height // 2)
+        if loading and (self.width > self.canvas.winfo_width() or self.height > self.canvas.winfo_height()):
+            self.fit_to_window()
+        else:
+            self.zoom_factor = 1
+            self.container = self.canvas.create_rectangle(init_x, init_y, init_x + self.width, init_y + self.height,
+                                                          width=0)
+            self.canvas.imagetk = ImageTk.PhotoImage(self.displayed_image)
+            self.canvas.create_image(self.canvas.winfo_width() // 2, self.canvas.winfo_height() // 2,
+                                     anchor=tk.CENTER, image=self.canvas.imagetk)
+            self.center_canvas()
+
+    def center_canvas(self):
+        # Move the canvas postion back to the center.
+        init_x = (self.canvas.winfo_width() // 2) - (self.width // 2)
+        init_y = (self.canvas.winfo_height() // 2) - (self.height // 2)
+        tgt_x = int(self.canvas.canvasx(init_x))
+        tgt_y = int(self.canvas.canvasy(init_y))
+        if init_x != tgt_x or init_y != tgt_y:
+            self.canvas.scan_mark(init_x, init_y)
+            self.canvas.scan_dragto(tgt_x, tgt_y, gain=1)
+
+    @not_without_file
+    def fit_to_window(self, event=None):
+        # Resize the image to fit the window
+        self.center_canvas()
+        init_x = (self.canvas.winfo_width() // 2) - (self.width // 2)
+        init_y = (self.canvas.winfo_height() // 2) - (self.height // 2)
+        scale = min((self.canvas.winfo_width() - 4) / self.width, (self.canvas.winfo_height() - 4) / self.height)
+        self.zoom_factor = scale
+
+        self.container = self.canvas.create_rectangle(init_x, init_y, init_x + self.width, init_y + self.height,
+                                                      width=0)
+        self.zoom_image(self.canvas.winfo_width() / 2, self.canvas.winfo_height() / 2, scale)
+
+    def show_image(self, event=None):
+        # Update display of the image on the canvas
+        if not self.container:
+            return
+        image_bbox = self.canvas.bbox(self.container)  # get image area
+        # Remove 1 pixel shift at the sides of the image_bbox
+        image_bbox = (image_bbox[0] + 1, image_bbox[1] + 1, image_bbox[2] - 1, image_bbox[3] - 1)
+        visible_bbox = (self.canvas.canvasx(0),  # get visible area of the canvas
+                        self.canvas.canvasy(0),
+                        self.canvas.canvasx(self.canvas.winfo_width()),
+                        self.canvas.canvasy(self.canvas.winfo_height()))
+        scroll_bbox = [min(image_bbox[0], visible_bbox[0]), min(image_bbox[1], visible_bbox[1]),
+                       max(image_bbox[2], visible_bbox[2]), max(image_bbox[3], visible_bbox[3])]
+        if scroll_bbox[0] == visible_bbox[0] and scroll_bbox[2] == visible_bbox[2]:  # whole image in the visible area
+            scroll_bbox[0] = image_bbox[0]
+            scroll_bbox[2] = image_bbox[2]
+        if scroll_bbox[1] == visible_bbox[1] and scroll_bbox[3] == visible_bbox[3]:  # whole image in the visible area
+            scroll_bbox[1] = image_bbox[1]
+            scroll_bbox[3] = image_bbox[3]
+        self.canvas.configure(scrollregion=scroll_bbox)  # set scroll region
+        x1 = max(visible_bbox[0] - image_bbox[0], 0)  # get coordinates (x1,y1,x2,y2) of the image tile
+        y1 = max(visible_bbox[1] - image_bbox[1], 0)
+        x2 = min(visible_bbox[2], image_bbox[2]) - image_bbox[0]
+        y2 = min(visible_bbox[3], image_bbox[3]) - image_bbox[1]
+        if int(x2 - x1) > 0 and int(y2 - y1) > 0:  # show image if it in the visible area
+            # Desired bbox in the original pixel size
+            des_x1 = x1 / self.zoom_factor
+            des_x2 = x2 / self.zoom_factor
+            des_y1 = y1 / self.zoom_factor
+            des_y2 = y2 / self.zoom_factor
+            des_x_width = int(x2 - x1)
+            des_y_height = int(y2 - y1)
+
+            real_x_width = des_x2 - des_x1
+            rnd_x_width = math.ceil(des_x2) - math.floor(des_x1)
+            tgt_x_width = (des_x_width / real_x_width) * rnd_x_width
+
+            real_y_height = des_y2 - des_y1
+            rnd_y_height = math.ceil(des_y2) - math.floor(des_y1)
+            tgt_y_height = (des_y_height / real_y_height) * rnd_y_height
+
+            x = des_x_width / rnd_x_width * (des_x1 - math.floor(des_x1))
+            y = des_y_height / rnd_y_height * (des_y1 - math.floor(des_y1))
+
+            # First crop to target area, with a whole-pixel border. Scale up, then crop further to the desired subpixels
+            image = self.displayed_image.crop((math.floor(des_x1), math.floor(des_y1),
+                                               math.ceil(des_x2), math.ceil(des_y2)))
+            image = image.resize((int(tgt_x_width), int(tgt_y_height)), resample=Image.NEAREST)
+            image = image.crop((x, y, x + des_x_width, y + des_y_height))
+            self.canvas.imagetk = ImageTk.PhotoImage(image)
+
+            self.canvas.create_image(max(visible_bbox[0], image_bbox[0]), max(visible_bbox[1], image_bbox[1]),
+                                     anchor='nw', image=self.canvas.imagetk)
+
+    def make_file_list(self):
+        # Scan the current directory for supported image files.
+        directory = os.path.dirname(os.path.abspath(self.file))
+        self.file_list = [os.path.normpath(os.path.join(directory, file)) for file in os.listdir(directory) if
+                          os.path.splitext(file)[-1] in SUPPORTED_EXTENSIONS]
+        self.current_index = self.file_list.index(self.file)
+
+    def open_file(self):
+        # Open a file specified with a file dialog
+        file = tkfiledialog.askopenfilename()
+        if file:
+            self.file_list = []
+            self.load_image(os.path.normpath(file))
+
+    @not_without_file
+    def next_file(self):
+        # Open the next file in the current directory
+        if len(self.file_list) == 0:
+            self.make_file_list()
+        if self.current_index < len(self.file_list) - 1:
+            self.zoom_factor = 1
+            self.current_index += 1
+            self.load_image(self.file_list[self.current_index])
+
+    @not_without_file
+    def prev_file(self):
+        # Open the previous file in the current directory
+        if len(self.file_list) == 0:
+            self.make_file_list()
+        if self.current_index > 0:
+            self.zoom_factor = 1
+            self.current_index -= 1
+            self.load_image(self.file_list[self.current_index])
+
+    def hover_pixel(self, event):
+        # Display pixel coordinate and value under the mouse pointer.
+        if self.file and self.displayed_image:
+            dx, dy, _, _ = self.canvas.bbox(self.container)
+            event.x = int((self.canvas.canvasx(event.x) - dx) / self.zoom_factor)
+            event.y = int((self.canvas.canvasy(event.y) - dy) / self.zoom_factor)
+            if 0 <= event.y < self.image_data.shape[0] and 0 <= event.x < self.image_data.shape[1]:
+                pixel = self.image_data[event.y][event.x]  # Correct for border around label.
+                self.xyvalue.set(f"X: {event.x} Y: {event.y}")
+                self.pixelvalue.set(pixel)
+                return "break"
+        self.xyvalue.set("-")
+        self.pixelvalue.set("-")
+        return "break"
+
+    def no_pixel(self, event):
+        # Clear pixel display when not hovering over the image.
+        self.xyvalue.set("-")
+        self.pixelvalue.set("-")
+
+    def close(self, event=None):
+        # Close the window
+        # The central window manager may have other windows open, so we need to explicitly close any children.
+        if self.info_popup:
+            self.info_popup.destroy()
+        if self.display_popup:
+            self.display_popup.destroy()
+        if self.about_popup:
+            self.about_popup.destroy()
+        self.destroy()
+        if not self.master.children:
+            # Shut down ImQuick if no other windows are open.
+            self.master.destroy()
+
+
+class InfoPopup(tk.Toplevel):
+    # Dialog showing image statistics
+    def __init__(self, master, data, file):
+        super(InfoPopup, self).__init__()
+        self.master = master
+        self.filename = ttk.Label(self, text="Info")
+        self.title("Image details")
+        self.iconbitmap(resource_directory(ICON_FILE))
+        self.transient(master)
+
+        self.info = tk.Text(self)
+
+        self.filename.pack()
+        self.info.pack(fill=tk.BOTH, expand=True)
+        self.show_info(data, file)
+        self.protocol('WM_DELETE_WINDOW', self.destroy)
+        self.geometry(f"250x150+{master.winfo_x() + master.winfo_width()}+{master.winfo_y()}")
+
+    def destroy(self):
+        super(InfoPopup, self).destroy()
+        self.master.info_popup = None
+        # Deregister from the main window manager too.
+        if self._name in self.master.master.children:
+            del self.master.master.children[self._name]
+
+    def show_info(self, data, file):
+        filename = os.path.split(file)[-1]
+        self.filename.config(text=filename)
+        infotxt = f"""
+        Format: {data.dtype}
+        Width: {data.shape[1]}px
+        Height: {data.shape[0]}px
+        Minimum: {data.min()}
+        Maximum: {data.max()}
+        Unique Values: {len(np.unique(data))}
+        """
+        self.info.configure(state=tk.NORMAL)
+        self.info.delete(1.0, tk.END)
+        self.info.insert(tk.INSERT, infotxt)
+        self.info.configure(state=tk.DISABLED)
+
+
+class DisplayPopup(tk.Toplevel):
+    # Dialog for contrast adjustment
+    def __init__(self, master, file):
+        super(DisplayPopup, self).__init__()
+        self.master = master
+        self.filename = ttk.Label(self, text="Info", anchor=tk.CENTER)
+        self.title(f"Adjust Contrast")
+        self.iconbitmap(resource_directory(ICON_FILE))
+        self.resizable(0, 0)
+        self.transient(master)
+
+        self.min_slider = ttk.Scale(self, variable=master.min_display_value, from_=0, to=255)
+
+        self.max_slider = ttk.Scale(self, variable=master.max_display_value, from_=0, to=255)
+
+        self.columnconfigure(1, weight=3)
+        self.rowconfigure(1, weight=1)
+        self.rowconfigure(2, weight=1)
+        self.filename.grid(column=0, row=0, columnspan=2, sticky=tk.NSEW, pady=5)
+        ttk.Label(self, text="Min:").grid(column=0, row=1, sticky=tk.NSEW, padx=5)
+        ttk.Label(self, text="Max:").grid(column=0, row=2, sticky=tk.NSEW, padx=5)
+        self.min_slider.grid(column=1, row=1, sticky=tk.NSEW, padx=10)
+        self.max_slider.grid(column=1, row=2, sticky=tk.NSEW, padx=10)
+
+        self.show_info(file)
+        self.protocol('WM_DELETE_WINDOW', self.destroy)
+        self.geometry(f"200x150+{master.winfo_x() + master.winfo_width()}+{master.winfo_y()}")
+
+    def destroy(self):
+        super(DisplayPopup, self).destroy()
+        self.master.display_popup = None
+        # Deregister from the main window manager too.
+        if self._name in self.master.master.children:
+            del self.master.master.children[self._name]
+
+    def show_info(self, file):
+        filename = os.path.split(file)[-1]
+        self.filename.config(text=filename)
+
+
+class AboutPopup(tk.Toplevel):
+    # Dialog for info about ImQuick
+    def __init__(self, master):
+        super(AboutPopup, self).__init__()
+        self.master = master
+        self.title("About ImQuick")
+        self.resizable(0, 0)
+        self.transient(master)
+        self.iconbitmap(resource_directory(ICON_FILE))
+        self.logo = Image.open(resource_directory(ICON_FILE)).resize((100, 100))
+        self.logoimg = ImageTk.PhotoImage(self.logo)
+        tk.Label(self, image=self.logoimg).pack(pady=(15, 0))
+        tk.Label(self, text="ImQuick", font=("Arial", 18), justify=tk.CENTER).pack()
+        tk.Label(self, text="Version " + __version__, font=("Consolas", 10), justify=tk.CENTER).pack(pady=(0, 5))
+        tk.Label(self, text="David Stirling, 2021", font=("Arial", 10), justify=tk.CENTER).pack()
+        tk.Label(self, text="@DavidRStirling", font=("Arial", 10), justify=tk.CENTER).pack(pady=(0, 15))
+        self.protocol('WM_DELETE_WINDOW', self.destroy)
+        self.geometry(f"250x250+{master.winfo_x() + master.winfo_width()}+{master.winfo_y()}")
+
+    def destroy(self):
+        super(AboutPopup, self).destroy()
+        self.master.about_popup = None
+        # Deregister from the main window manager too.
+        if self._name in self.master.master.children:
+            del self.master.master.children[self._name]
+
+
+def docs():
+    import webbrowser
+    webbrowser.open("https://github.com/DavidStirling/ImQuick")
+
+
+def _load_tkdnd(master):
+    # Loads the DND plugin from the packed-in directory
+    master.tk.eval('global auto_path; lappend auto_path {tkdnd}')
+    master.tk.eval('package require tkdnd')
+    master._tkdnd_loaded = True
+
+
+def resource_directory(target):
+    if '__compiled__' in globals():
+        return os.path.join(sys.prefix, 'resources', target)
+    else:
+        return os.path.join('resources', target)
+
+
+if __name__ == '__main__':
+    if len(sys.argv) > 1:
+        file_in = sys.argv[1]
+    else:
+        file_in = ''
+    root = tkDnD.TkinterDnD.Tk()
+    root.wm_title("I am the window manager. If you can see me, something isn't right")
+    root.withdraw()
+    _load_tkdnd(root)
+    app = ImQuick(root, file_in)
+    root.mainloop()
