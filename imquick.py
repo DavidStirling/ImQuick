@@ -477,7 +477,7 @@ class ImQuick(tk.Toplevel):
         # Scan the current directory for supported image files.
         directory = os.path.dirname(os.path.abspath(self.file))
         self.file_list = [os.path.normpath(os.path.join(directory, file)) for file in os.listdir(directory) if
-                          os.path.splitext(file)[-1] in SUPPORTED_EXTENSIONS]
+                          os.path.splitext(file)[-1].lower() in SUPPORTED_EXTENSIONS]
         self.current_index = self.file_list.index(self.file)
 
     def open_file(self):
