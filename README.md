@@ -11,7 +11,7 @@ ImQuick has therefore been designed as a lightweight viewer with some of those u
 
 ## Installation
 
-Run the setup.exe file [from the releases page](https://github.com/DavidStirling/ImQuick/releases).
+Run the setup.exe file [from the releases page](https://github.com/DavidStirling/ImQuick/releases). Only Windows is currently supported (sorry!).
 
 ## Key Features
 
