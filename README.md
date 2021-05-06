@@ -1,13 +1,13 @@
 # ImQuick
-A lightweight scientific image previewer written in Python.
+A lightweight scientific image viewer written in Python.
 
 [![Version](https://img.shields.io/badge/Version-0.5-green.svg)](https://github.com/DavidStirling/ImQuick/releases)
 
 ---
 
-There are several amazing image viewing and editing appliations geared towards the scientific community. However, many of these packages suffer from slow startup times and a lack of integration into the system shell. For many researchers it can be frustrating to have to launch these very feature-rich applications just to inspect a file. Windows includes it's own image previewer, but this lacks some key features which are helpful to visualise and understand raw scientific data.
+There are several amazing image viewing and editing appliations geared towards the scientific community. However, many of these packages suffer from slow startup times and a lack of integration into the system shell. For researchers it can be frustrating to have to launch these very feature-rich applications just to view a file or determine signal strength. Windows includes it's own image previewer, but this lacks some key features which are helpful to visualise and understand raw scientific data.
 
-ImQuick has therefore been designed as a lightweight viewer with some of those useful tools built-in. The priorities for this project are startup speed, integration into the OS and minimal dependencies. Viewing an image needs to be fast and painless. To that end ImQuick is explicitly **not** an image editor, consider it as a viwer only.
+ImQuick has therefore been designed as a lightweight viewer with some of those useful tools built-in. Viewing an image needs to be fast and painless. The priorities for this project are therefore in startup speed, OS integration and minimal dependencies/bulk. To that end ImQuick is explicitly not an image editor, consider it as a viewer only.
 
 ## Installation
 
@@ -18,7 +18,7 @@ Run the setup.exe file [from the releases page](https://github.com/DavidStirling
 ![image](https://user-images.githubusercontent.com/26802537/117225458-5a0ccd00-ade0-11eb-9d4e-a45b328b5767.png)
 
 
-When installed, image files can be loaded into the viewer using the 'ImQuick' option added to the right-click context menu. You can also drag images onto an existing ImQuick window, or set the program as the default viewer if you like. The UI also has buttons for cycling through open images.
+When installed, image files can be loaded into the viewer using the 'ImQuick' option added to the right-click context menu for image files. You can also drag images onto an existing ImQuick window, or set the program as the default viewer if you like. The UI also has buttons for cycling through images in a directory.
 
 Pan/Zoom can be performed with the mouse and mousewheel, or the dedicated icons. You'll also find icons to view the image at actual size, and to fit the current image to the window.
 
@@ -29,9 +29,9 @@ Hovering over a pixel on the image will display it's x/y coordinate and intensit
 
 ## Format support
 
-This is a tricky area. Currently ImQuick supports most common image formats (e.g. .tif, .png, .jpeg). The imaging space is somewhat overrun with proprietary formats to the point that supporting them all in a lightweight package may be very difficult. If support for a format would be particularly valuable please do raise an issue requesting it.
+This is a tricky area. Currently ImQuick supports most common image formats (e.g. .tif, .png, .jpeg). The bioimaging space is somewhat overrun with proprietary formats to the point that supporting them all in a lightweight package may be very difficult. If support for a format would be particularly valuable please do raise an issue requesting it.
 
-Right now (in beta) ImQuick can open 2D images. Support for 3D Z-stacks and time series images is hopefully coming soon. Faster loading of some compressed formats is also an area being pursued. 
+Right now (in beta) ImQuick can open 2D images. Support for 3D Z-stacks and time series images is hopefully coming soon. Faster loading of some compressed formats is also an area being pursued.
 
 
 ## Setup from source
