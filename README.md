@@ -29,9 +29,9 @@ Hovering over a pixel on the image will display it's x/y coordinate and intensit
 
 ## Format support
 
-This is a tricky area. Currently ImQuick supports most common image formats (e.g. .tif, .png, .jpeg). The bioimaging space is somewhat overrun with proprietary formats to the point that supporting them all in a lightweight package may be very difficult. If support for a format would be particularly valuable please do raise an issue requesting it.
+This is a tricky area. ImQuick currently supports most common image formats (e.g. .tif, .png, .jpeg). The bioimaging space is somewhat overrun with proprietary formats to the point that supporting them all in a lightweight package may be very difficult. If support for a format would be particularly valuable please do raise an issue requesting it.
 
-Right now (in beta) ImQuick can open 2D images. Support for 3D Z-stacks and time series images is hopefully coming soon. Faster loading of some compressed formats is also an area being pursued.
+Right now (in beta) ImQuick can open 2D images, 3D Z-stacks and time series. Faster loading of some compressed formats is also an area being pursued.
 
 
 ## Setup from source
