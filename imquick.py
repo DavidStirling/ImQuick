@@ -64,8 +64,13 @@ class ImQuick(tk.Toplevel):
         self.display_popup = None
         self.about_popup = None
 
+        self.reader = None
+        self.max_plane = 0
+        self.displayed_plane = 0
+
         self.min_display_value = tk.IntVar(self, value=0)
         self.max_display_value = tk.IntVar(self, value=255)
+        self.z_display_value = tk.IntVar(self, value=0)
 
         self.min_display_value.trace("w", self.update_min_display)
         self.max_display_value.trace("w", self.update_max_display)
@@ -141,6 +146,24 @@ class ImQuick(tk.Toplevel):
         self.status_xy = ttk.Label(self.statusbar, textvariable=self.xyvalue, width=15, anchor=tk.CENTER)
         self.status_pixel = ttk.Label(self.statusbar, textvariable=self.pixelvalue, width=20, anchor=tk.CENTER)
 
+        self.stack_ctrl = tk.Frame(master=self.image_frame, relief=tk.GROOVE, borderwidth=2)
+        self.z_slider = ttk.Scale(self.stack_ctrl,
+                                  variable=self.z_display_value,
+                                  from_=0,
+                                  to=self.max_plane,
+                                  command=lambda x: self.set_z_plane(round(float(x))))
+        validate = self.register(self.set_z_plane)
+        self.z_label = ttk.Entry(self.stack_ctrl,
+                                 textvariable=self.z_display_value,
+                                 validate='key',
+                                 validatecommand=(validate, '%P'),
+                                 width=5,
+                                 justify=tk.CENTER,
+                                 )
+
+        self.z_slider.pack(side=tk.LEFT, padx=10, fill=tk.X, expand=True)
+        self.z_label.pack(side=tk.LEFT, padx=5)
+
         self.open_button.pack(side=tk.LEFT, padx=(3, 0))
         self.prev_button.pack(side=tk.LEFT, padx=(3, 0))
         self.next_button.pack(side=tk.LEFT, padx=(0, 3))
@@ -171,6 +194,8 @@ class ImQuick(tk.Toplevel):
         else:
             self.canvas.create_text(self.canvas.winfo_width() // 2, self.canvas.winfo_height() // 2,
                                     anchor=tk.CENTER, text="[Drag a file here to open]")
+        if self.max_plane > 0:
+            self.stack_ctrl.grid(row=2, column=0, columnspan=2, sticky='ew')
 
     def on_drop(self, event):
         # Open files dropped onto the window
@@ -232,6 +257,33 @@ class ImQuick(tk.Toplevel):
             self.min_display_value.set(max_d - 1)
         self.update_contrast()
 
+    @not_without_file
+    def update_z_display(self, *args):
+        if self.max_plane == 0 or self.displayed_plane == self.z_display_value.get():
+            return
+        else:
+            self.displayed_plane = self.z_display_value.get()
+            self.image_data = self.reader.get_data(self.displayed_plane)
+            self.scaled_image_data = rescale_data(self.image_data)
+            self.update_contrast()
+
+    def set_z_plane(self, val):
+        try:
+            if val == '':
+                val = 0
+            else:
+                val = int(val)
+            if val > self.max_plane:
+                self.z_display_value.set(self.max_plane)
+            elif val < 0:
+                self.z_display_value.set(0)
+            else:
+                self.z_display_value.set(val)
+            self.update_z_display()
+            return True
+        except ValueError:
+            return False
+
     def update_contrast(self, *args):
         # Apply pixel min/max intensity display
         new_min = self.min_display_value.get()
@@ -277,25 +329,29 @@ class ImQuick(tk.Toplevel):
         self.canvas.delete("all")
         file = os.path.normpath(file)
         try:
-            reader = imageio.get_reader(file)
-            self.image_data = reader.get_data(0)
+            self.reader = imageio.get_reader(file)
+            if os.path.splitext(file)[-1].lower() in ('.tif', '.tiff'):
+                # Use the Pillow reader if the file is compressed.
+                meta = self.reader.get_meta_data()
+                if meta.get('compression', False) == 5:  # LZW compression
+                    self.reader = imageio.get_reader(file, format='TIFF-PIL')
+            self.max_plane = self.reader.get_length() - 1
+            if self.max_plane > 0:
+                self.image_data = self.reader.get_data(self.max_plane // 2)
+                self.z_slider.config(to=self.max_plane)
+                self.z_display_value.set(self.max_plane // 2)
+                self.stack_ctrl.grid(row=2, column=0, columnspan=2, sticky='ew')
+            else:
+                self.image_data = self.reader.get_data(0)
+                self.stack_ctrl.grid_remove()
+                self.update()
         except:
             self.canvas.create_text(self.canvas.winfo_width() // 2, self.canvas.winfo_height() // 2,
                                     anchor=tk.CENTER, text="[Unable to open file]")
+            self.reader = None
             self.file = None
             return
-        maxval = self.image_data.max()
-        if maxval >= 4096:
-            self.scaled_image_data = self.image_data / 265
-        elif maxval >= 1024:
-            self.scaled_image_data = self.image_data / 16
-        elif maxval >= 256:
-            self.scaled_image_data = self.image_data / 4
-        elif maxval <= 1:
-            self.scaled_image_data = self.image_data * 256
-        else:
-            self.scaled_image_data = self.image_data
-        self.scaled_image_data = self.scaled_image_data.astype('uint8')
+        self.scaled_image_data = rescale_data(self.image_data)
         self.displayed_image = Image.fromarray(self.scaled_image_data)
         self.width, self.height = self.displayed_image.size
         self.file = file
@@ -309,15 +365,15 @@ class ImQuick(tk.Toplevel):
             self.info_popup.show_info(self.image_data, file)
 
     @not_without_file
-    def scroll_y(self, *args, **kwargs):
+    def scroll_y(self, *args):
         # Scroll the canvas in the y axis
-        self.canvas.yview(*args, **kwargs)
+        self.canvas.yview(*args)
         self.show_image()
 
     @not_without_file
-    def scroll_x(self, *args, **kwargs):
+    def scroll_x(self, *args):
         # Scroll the canvas in the x axis
-        self.canvas.xview(*args, **kwargs)
+        self.canvas.xview(*args)
         self.show_image()
 
     @not_without_file
@@ -421,7 +477,7 @@ class ImQuick(tk.Toplevel):
 
     def show_image(self, event=None):
         # Update display of the image on the canvas
-        if not self.container:
+        if not self.container or self.canvas.bbox(self.container) is None:
             return
         image_bbox = self.canvas.bbox(self.container)  # get image area
         # Remove 1 pixel shift at the sides of the image_bbox
@@ -492,20 +548,28 @@ class ImQuick(tk.Toplevel):
         # Open the next file in the current directory
         if len(self.file_list) == 0:
             self.make_file_list()
+        if len(self.file_list) == 1:
+            return
         if self.current_index < len(self.file_list) - 1:
-            self.zoom_factor = 1
             self.current_index += 1
-            self.load_image(self.file_list[self.current_index])
+        elif self.current_index == len(self.file_list) - 1:
+            self.current_index = 0
+        self.zoom_factor = 1
+        self.load_image(self.file_list[self.current_index])
 
     @not_without_file
     def prev_file(self):
         # Open the previous file in the current directory
         if len(self.file_list) == 0:
             self.make_file_list()
+        if len(self.file_list) == 1:
+            return
         if self.current_index > 0:
-            self.zoom_factor = 1
             self.current_index -= 1
-            self.load_image(self.file_list[self.current_index])
+        elif self.current_index == 0:
+            self.current_index = len(self.file_list) - 1
+        self.zoom_factor = 1
+        self.load_image(self.file_list[self.current_index])
 
     def hover_pixel(self, event):
         # Display pixel coordinate and value under the mouse pointer.
@@ -649,6 +713,21 @@ class AboutPopup(tk.Toplevel):
         # Deregister from the main window manager too.
         if self._name in self.master.master.children:
             del self.master.master.children[self._name]
+
+
+def rescale_data(data):
+    maxval = data.max()
+    if maxval >= 4096:
+        out = data / 265
+    elif maxval >= 1024:
+        out = data / 16
+    elif maxval >= 256:
+        out = data / 4
+    elif maxval <= 1:
+        out = data * 256
+    else:
+        out = data
+    return out.astype('uint8')
 
 
 def docs():
