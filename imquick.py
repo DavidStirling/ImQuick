@@ -90,6 +90,9 @@ class ImQuick(tk.Toplevel):
         h.configure(command=self.scroll_x)
         self.canvas.config(xscrollcommand=h.set, yscrollcommand=v.set)
 
+        self.bind('a', self.auto_contrast)
+        self.bind('<Left>', self.prev_file)
+        self.bind('<Right>', self.next_file)
         self.canvas.bind("<Motion>", self.hover_pixel)
         self.bind("<Motion>", self.no_pixel)
 
@@ -319,7 +322,7 @@ class ImQuick(tk.Toplevel):
             self.display_popup = DisplayPopup(self, self.file)
 
     @not_without_file
-    def auto_contrast(self):
+    def auto_contrast(self, event=None):
         # Set contrast range to min-max pixel intensity values.
         self.min_display_value.set(self.scaled_image_data.min())
         self.max_display_value.set(self.scaled_image_data.max())
@@ -327,6 +330,7 @@ class ImQuick(tk.Toplevel):
     def load_image(self, file):
         # Open an image
         self.canvas.delete("all")
+        self.focus_set()
         file = os.path.normpath(file)
         try:
             self.reader = imageio.get_reader(file)
@@ -544,7 +548,9 @@ class ImQuick(tk.Toplevel):
             self.load_image(os.path.normpath(file))
 
     @not_without_file
-    def next_file(self):
+    def next_file(self, event=None):
+        if event and self.z_label == self.focus_get():
+            return
         # Open the next file in the current directory
         if len(self.file_list) == 0:
             self.make_file_list()
@@ -558,7 +564,9 @@ class ImQuick(tk.Toplevel):
         self.load_image(self.file_list[self.current_index])
 
     @not_without_file
-    def prev_file(self):
+    def prev_file(self, event=None):
+        if event and self.z_label == self.focus_get():
+            return
         # Open the previous file in the current directory
         if len(self.file_list) == 0:
             self.make_file_list()
@@ -573,10 +581,9 @@ class ImQuick(tk.Toplevel):
 
     def hover_pixel(self, event):
         # Display pixel coordinate and value under the mouse pointer.
-        if self.file and self.displayed_image:
-            dx, dy, _, _ = self.canvas.bbox(self.container)
-            event.x = int((self.canvas.canvasx(event.x) - dx) / self.zoom_factor)
-            event.y = int((self.canvas.canvasy(event.y) - dy) / self.zoom_factor)
+        if self.file and self.displayed_image and (box := self.canvas.bbox(self.container)):
+            event.x = int((self.canvas.canvasx(event.x) - box[0]) / self.zoom_factor)
+            event.y = int((self.canvas.canvasy(event.y) - box[1]) / self.zoom_factor)
             if 0 <= event.y < self.image_data.shape[0] and 0 <= event.x < self.image_data.shape[1]:
                 pixel = self.image_data[event.y][event.x]  # Correct for border around label.
                 self.xyvalue.set(f"X: {event.x} Y: {event.y}")
