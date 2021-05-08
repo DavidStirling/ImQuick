@@ -16,7 +16,7 @@ import tkinter.ttk as ttk
 import tkinter.filedialog as tkfiledialog
 import TkinterDnD2 as tkDnD
 
-__version__ = "0.5 Beta"
+__version__ = "0.6 Beta"
 
 SUPPORTED_EXTENSIONS = {".tif", ".tiff", ".gif", ".png", ".jpeg", ".jpg", ".bmp", ".npz", ".itk"}
 ICON_FILE = 'ImQuick.ico'

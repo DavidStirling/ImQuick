@@ -1,7 +1,7 @@
 # ImQuick
 A lightweight scientific image viewer written in Python.
 
-[![Version](https://img.shields.io/badge/Version-0.5-green.svg)](https://github.com/DavidStirling/ImQuick/releases)
+[![Version](https://img.shields.io/badge/Version-0.6-green.svg)](https://github.com/DavidStirling/ImQuick/releases)
 
 ---
 
