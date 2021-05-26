@@ -629,7 +629,8 @@ class InfoPopup(tk.Toplevel):
         self.info.pack(fill=tk.BOTH, expand=True)
         self.show_info(data, file)
         self.protocol('WM_DELETE_WINDOW', self.destroy)
-        self.geometry(f"250x150+{master.winfo_x() + master.winfo_width()}+{master.winfo_y()}")
+        self.geometry(f"250x150+{min(master.winfo_x() + master.winfo_width(),  self.winfo_screenwidth() - 260)}+"
+                      f"{master.winfo_y() + 250}")
 
     def destroy(self):
         super(InfoPopup, self).destroy()
@@ -681,7 +682,8 @@ class DisplayPopup(tk.Toplevel):
 
         self.show_info(file)
         self.protocol('WM_DELETE_WINDOW', self.destroy)
-        self.geometry(f"200x150+{master.winfo_x() + master.winfo_width()}+{master.winfo_y()}")
+        self.geometry(f"200x150+{min(master.winfo_x() + master.winfo_width(),  self.winfo_screenwidth() - 210)}+"
+                      f"{master.winfo_y() + 50}")
 
     def destroy(self):
         super(DisplayPopup, self).destroy()
@@ -712,7 +714,8 @@ class AboutPopup(tk.Toplevel):
         tk.Label(self, text="David Stirling, 2021", font=("Arial", 10), justify=tk.CENTER).pack()
         tk.Label(self, text="@DavidRStirling", font=("Arial", 10), justify=tk.CENTER).pack(pady=(0, 15))
         self.protocol('WM_DELETE_WINDOW', self.destroy)
-        self.geometry(f"250x250+{master.winfo_x() + master.winfo_width()}+{master.winfo_y()}")
+        self.geometry(f"250x250+{master.winfo_x() // 2 + (master.winfo_width() // 2)}+"
+                      f"{master.winfo_y() // 2 + (master.winfo_height() // 2)}")
 
     def destroy(self):
         super(AboutPopup, self).destroy()
