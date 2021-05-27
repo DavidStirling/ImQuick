@@ -355,6 +355,10 @@ class ImQuick(tk.Toplevel):
             self.reader = None
             self.file = None
             return
+        if self.min_display_value.get() != 0:
+            self.min_display_value.set(0)
+        if self.max_display_value.get() != 255:
+            self.max_display_value.set(255)
         self.scaled_image_data = rescale_data(self.image_data)
         self.displayed_image = Image.fromarray(self.scaled_image_data)
         self.width, self.height = self.displayed_image.size
