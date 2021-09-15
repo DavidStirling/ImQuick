@@ -23,6 +23,7 @@ __version__ = "0.6 Beta"
 
 SUPPORTED_EXTENSIONS = {".tif", ".tiff", ".gif", ".png", ".jpeg", ".jpg", ".bmp", ".npz", ".itk"}
 ICON_FILE = 'ImQuick.ico'
+INTERP_DEFS = {'Nearest': Image.NEAREST, 'Bilinear': Image.BILINEAR, 'Bicubic': Image.BICUBIC}
 
 
 def not_without_file(func):
@@ -74,6 +75,7 @@ class ImQuick(tk.Toplevel):
         self.min_display_value = tk.IntVar(self, value=0)
         self.max_display_value = tk.IntVar(self, value=255)
         self.z_display_value = tk.IntVar(self, value=0)
+        self.interp_mode = tk.StringVar(self, value='Nearest')
 
         self.min_display_value.trace("w", self.update_min_display)
         self.max_display_value.trace("w", self.update_max_display)
@@ -237,6 +239,12 @@ class ImQuick(tk.Toplevel):
 
         menu_help.add_command(label='Documentation', command=docs)
         menu_help.add_command(label='About ImQuick', command=self.about)
+
+        interp_submenu = tk.Menu(menubar, tearoff=False)
+        interp_submenu.add_radiobutton(label="Nearest", variable=self.interp_mode, command=self.show_image)
+        interp_submenu.add_radiobutton(label="Bilinear", variable=self.interp_mode, command=self.show_image)
+        interp_submenu.add_radiobutton(label="Bicubic", variable=self.interp_mode, command=self.show_image)
+        menu_view.add_cascade(label='Interpolation mode', menu=interp_submenu, underline=0)
 
         menubar.add_cascade(menu=menu_file, label='File')
         menubar.add_cascade(menu=menu_view, label='View')
@@ -541,7 +549,7 @@ class ImQuick(tk.Toplevel):
             # First crop to target area, with a whole-pixel border. Scale up, then crop further to the desired subpixels
             image = self.displayed_image.crop((math.floor(des_x1), math.floor(des_y1),
                                                math.ceil(des_x2), math.ceil(des_y2)))
-            image = image.resize((int(tgt_x_width), int(tgt_y_height)), resample=Image.NEAREST)
+            image = image.resize((int(tgt_x_width), int(tgt_y_height)), resample=INTERP_DEFS[self.interp_mode.get()])
             image = image.crop((x, y, x + des_x_width, y + des_y_height))
             self.canvas.imagetk = ImageTk.PhotoImage(image)
 
