@@ -3,6 +3,9 @@
 # Canvas pan/zoom code adapted from https://stackoverflow.com/questions/41656176/tkinter-canvas-zoom-move-pan
 # Drag/drop utilises the tkdnd2 extension https://github.com/petasis/tkdnd
 # and wrapper https://sourceforge.net/projects/tkinterdnd/
+# Download zipped binaries from the links above and locate your Python installation.
+# Place the tkdnd2.9.2 folder into Python38\tcl
+# Place the TkinterDnD2 folder into Python38\Lib\site-packages
 
 import math
 import imageio
