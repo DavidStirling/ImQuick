@@ -96,7 +96,7 @@ class ImQuick(tk.Toplevel):
         self.canvas.bind("<Motion>", self.hover_pixel)
         self.bind("<Motion>", self.no_pixel)
 
-        self.canvas.bind('<Configure>', self.show_image)  # canvas is resized
+        self.canvas.bind('<Configure>', self.resize_window)  # canvas is resized
         self.canvas.bind('<ButtonPress-1>', self.move_from)
         self.canvas.bind('<B1-Motion>', self.move_to)
         self.canvas.bind('<MouseWheel>', self.zoom_mouse)
@@ -441,6 +441,7 @@ class ImQuick(tk.Toplevel):
     @not_without_file
     def zoom_image(self, x, y, scale):
         # Apply a zoom transform
+        self.zoomfit_button.state(['!pressed'])
         self.canvas.scale(self.container, x, y, scale, scale)  # Resize the bounding box too
         self.show_image()
 
@@ -452,6 +453,7 @@ class ImQuick(tk.Toplevel):
         if loading and (self.width > self.canvas.winfo_width() or self.height > self.canvas.winfo_height()):
             self.fit_to_window()
         else:
+            self.zoomfit_button.state(['!pressed'])
             self.zoom_factor = 1
             self.container = self.canvas.create_rectangle(init_x, init_y, init_x + self.width, init_y + self.height,
                                                           width=0)
@@ -482,6 +484,12 @@ class ImQuick(tk.Toplevel):
         self.container = self.canvas.create_rectangle(init_x, init_y, init_x + self.width, init_y + self.height,
                                                       width=0)
         self.zoom_image(self.canvas.winfo_width() / 2, self.canvas.winfo_height() / 2, scale)
+        self.zoomfit_button.state(['pressed'])
+
+    def resize_window(self, *args):
+        if 'pressed' in self.zoomfit_button.state():
+            self.fit_to_window()
+        self.show_image()
 
     def show_image(self, event=None):
         # Update display of the image on the canvas
