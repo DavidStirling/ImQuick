@@ -1,7 +1,7 @@
 # ImQuick
 A lightweight scientific image viewer written in Python.
 
-[![Version](https://img.shields.io/badge/Version-0.6-green.svg)](https://github.com/DavidStirling/ImQuick/releases)
+[![Version](https://img.shields.io/badge/Version-1.0.0-green.svg)](https://github.com/DavidStirling/ImQuick/releases)
 
 ---
 
@@ -54,6 +54,8 @@ Use the following command from the main directory:
 ```
 python -m nuitka --mingw64 --standalone --plugin-enable=tk-inter --plugin-enable=numpy --include-data-file=resources/*=resources/ --include-data-file=tkdnd/*=tkdnd/ --windows-icon-from-ico=resources\ImQuick.ico --windows-disable-console --python-flag=no_site ImQuick.py 
 ```
+
+The `tkdnd` data parameter may need to be pointed to your `python\tcl` folder, or you can place a copy of tkdnd in the main folder to ease packaging.
 
 This will generate the required files in `\ImQuick.dist`. Execute `imquick.iss` using Inno Setup to pack the .exe into an installer.
 

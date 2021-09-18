@@ -23,7 +23,8 @@ __version__ = "0.6 Beta"
 
 SUPPORTED_EXTENSIONS = {".tif", ".tiff", ".gif", ".png", ".jpeg", ".jpg", ".bmp", ".npz", ".itk"}
 ICON_FILE = 'ImQuick.ico'
-INTERP_DEFS = {'Nearest': Image.NEAREST, 'Bilinear': Image.BILINEAR, 'Bicubic': Image.BICUBIC}
+INTERP_DEFS = {'Nearest': Image.NEAREST, 'Bilinear': Image.BILINEAR,
+               'Bicubic': Image.BICUBIC, 'Lanczos': Image.ANTIALIAS}
 
 
 def not_without_file(func):
@@ -246,6 +247,7 @@ class ImQuick(tk.Toplevel):
         interp_submenu.add_radiobutton(label="Nearest", variable=self.interp_mode, command=self.show_image)
         interp_submenu.add_radiobutton(label="Bilinear", variable=self.interp_mode, command=self.show_image)
         interp_submenu.add_radiobutton(label="Bicubic", variable=self.interp_mode, command=self.show_image)
+        interp_submenu.add_radiobutton(label="Lanczos", variable=self.interp_mode, command=self.show_image)
         menu_view.add_cascade(label='Interpolation mode', menu=interp_submenu, underline=0)
 
         menubar.add_cascade(menu=menu_file, label='File')
@@ -767,6 +769,7 @@ class DisplayPopup(tk.Toplevel):
         self.channel_select.set('All')
         self.selected = 0
         self.offset = 0
+        self.master.per_channel_contrast = False
 
     def channel_mode_select(self, event=None):
         if self.channel_select.get() == 'All':
