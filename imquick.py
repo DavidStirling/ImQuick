@@ -74,6 +74,8 @@ class ImQuick(tk.Toplevel):
 
         self.min_display_value = tk.IntVar(self, value=0)
         self.max_display_value = tk.IntVar(self, value=255)
+        self.per_channel_contrast = False
+        self.display_values_array = [0, 255]
         self.z_display_value = tk.IntVar(self, value=0)
         self.interp_mode = tk.StringVar(self, value='Nearest')
 
@@ -255,21 +257,35 @@ class ImQuick(tk.Toplevel):
         # Set minimum displayed pixel intensity
         min_d = self.min_display_value.get()
         max_d = self.max_display_value.get()
+        dirty = False
         if min_d == 255:
             self.min_display_value.set(254)
         if min_d >= max_d:
             self.max_display_value.set(min_d + 1)
-        self.update_contrast()
+            dirty = True
+        if self.display_popup and not self.display_popup.working:
+            offset = self.display_popup.offset
+            self.display_values_array[offset] = self.min_display_value.get()
+            self.display_values_array[offset + 1] = self.max_display_value.get()
+        if not dirty:
+            self.update_contrast()
 
     def update_max_display(self,  *args):
         # Set maximum displayed pixel intensity
         min_d = self.min_display_value.get()
         max_d = self.max_display_value.get()
+        dirty = False
         if max_d == 0:
             self.max_display_value.set(1)
         if min_d >= max_d:
             self.min_display_value.set(max_d - 1)
-        self.update_contrast()
+            dirty = True
+        if self.display_popup and not self.display_popup.working:
+            offset = self.display_popup.offset
+            self.display_values_array[offset] = self.min_display_value.get()
+            self.display_values_array[offset + 1] = self.max_display_value.get()
+        if not dirty:
+            self.update_contrast()
 
     @not_without_file
     def update_z_display(self, *args):
@@ -300,11 +316,23 @@ class ImQuick(tk.Toplevel):
 
     def update_contrast(self, *args):
         # Apply pixel min/max intensity display
-        new_min = self.min_display_value.get()
-        new_max = self.max_display_value.get()
         temp_data = self.scaled_image_data.copy()
-        temp_data[temp_data < new_min] = new_min
-        temp_data = ((temp_data - new_min) / (new_max - new_min))
+        if self.per_channel_contrast:
+            min_max = self.display_values_array[2:].copy()
+            channels_pool = []
+            for i in range(temp_data.shape[-1]):
+                channel_data = temp_data[:, :, i]
+                new_min = min_max.pop(0)
+                new_max = min_max.pop(0)
+                channel_data[channel_data < new_min] = new_min
+                channel_data = ((channel_data - new_min) / (new_max - new_min))
+                channels_pool.append(channel_data)
+            temp_data = np.dstack(channels_pool)
+        else:
+            new_min = self.min_display_value.get()
+            new_max = self.max_display_value.get()
+            temp_data[temp_data < new_min] = new_min
+            temp_data = ((temp_data - new_min) / (new_max - new_min))
         temp_data[temp_data > 1] = 1
         self.displayed_image = Image.fromarray((temp_data * 255).astype('uint8'))
         self.show_image()
@@ -330,13 +358,14 @@ class ImQuick(tk.Toplevel):
         if self.display_popup:
             self.display_popup.lift()
         else:
-            self.display_popup = DisplayPopup(self, self.file)
+            self.display_popup = DisplayPopup(self, self.file, self.image_data.shape)
 
     @not_without_file
     def auto_contrast(self, event=None):
         # Set contrast range to min-max pixel intensity values.
         self.min_display_value.set(self.scaled_image_data.min())
         self.max_display_value.set(self.scaled_image_data.max())
+        self.update_contrast()
 
     def load_image(self, file):
         # Open an image
@@ -370,6 +399,10 @@ class ImQuick(tk.Toplevel):
             self.min_display_value.set(0)
         if self.max_display_value.get() != 255:
             self.max_display_value.set(255)
+        if len(self.image_data.shape) < 3:
+            self.display_values_array = [0, 255]
+        else:
+            self.display_values_array = [0, 255] * (self.image_data.shape[-1] + 1)
         self.scaled_image_data = rescale_data(self.image_data)
         self.displayed_image = Image.fromarray(self.scaled_image_data)
         self.width, self.height = self.displayed_image.size
@@ -377,7 +410,7 @@ class ImQuick(tk.Toplevel):
         if self.info_popup is not None:
             self.info_popup.show_info(self.image_data, file)
         if self.display_popup is not None:
-            self.display_popup.show_info(file)
+            self.display_popup.switch_image(file, self.image_data.shape)
         self.first_show_image(loading=True)
         self.title(f"ImQuick {__version__} - {'...' + file[-100:] if len(file) > 100 else file}")
         if self.info_popup:
@@ -681,7 +714,7 @@ class InfoPopup(tk.Toplevel):
 
 class DisplayPopup(tk.Toplevel):
     # Dialog for contrast adjustment
-    def __init__(self, master, file):
+    def __init__(self, master, file, shape):
         super(DisplayPopup, self).__init__()
         self.master = master
         self.filename = ttk.Label(self, text="Info", anchor=tk.CENTER)
@@ -689,6 +722,14 @@ class DisplayPopup(tk.Toplevel):
         self.iconbitmap(resource_directory(ICON_FILE))
         self.resizable(0, 0)
         self.transient(master)
+        # Active channel ID
+        self.selected = 0
+        # Index for channel min-max array channel position
+        self.offset = 0
+        # Whether to hold off on updating channel array while manipulating sliders
+        self.working = False
+        self.channel_select = ttk.Combobox(self, state="readonly", values=['All'])
+        self.channel_select.bind("<<ComboboxSelected>>", self.channel_mode_select)
 
         self.min_slider = ttk.Scale(self, variable=master.min_display_value, from_=0, to=255)
 
@@ -698,12 +739,15 @@ class DisplayPopup(tk.Toplevel):
         self.rowconfigure(1, weight=1)
         self.rowconfigure(2, weight=1)
         self.filename.grid(column=0, row=0, columnspan=2, sticky=tk.NSEW, pady=5)
-        ttk.Label(self, text="Min:").grid(column=0, row=1, sticky=tk.NSEW, padx=5)
-        ttk.Label(self, text="Max:").grid(column=0, row=2, sticky=tk.NSEW, padx=5)
-        self.min_slider.grid(column=1, row=1, sticky=tk.NSEW, padx=10)
-        self.max_slider.grid(column=1, row=2, sticky=tk.NSEW, padx=10)
+        ttk.Label(self, text="Channel:").grid(column=0, row=1, sticky=tk.NSEW, padx=5)
+        self.channel_select.grid(column=1, row=1, padx=10)
+        ttk.Label(self, text="Min:").grid(column=0, row=2, sticky=tk.NSEW, padx=5)
+        ttk.Label(self, text="Max:").grid(column=0, row=3, sticky=tk.NSEW, padx=5)
 
-        self.show_info(file)
+        self.min_slider.grid(column=1, row=2, sticky=tk.NSEW, padx=10)
+        self.max_slider.grid(column=1, row=3, sticky=tk.NSEW, padx=10)
+
+        self.switch_image(file, shape)
         self.protocol('WM_DELETE_WINDOW', self.destroy)
         self.geometry(f"200x150+{min(master.winfo_x() + master.winfo_width(),  self.winfo_screenwidth() - 210)}+"
                       f"{master.winfo_y() + 50}")
@@ -715,9 +759,27 @@ class DisplayPopup(tk.Toplevel):
         if self._name in self.master.master.children:
             del self.master.master.children[self._name]
 
-    def show_info(self, file):
+    def switch_image(self, file, shape):
         filename = os.path.split(file)[-1]
         self.filename.config(text=filename)
+        shape = 0 if len(shape) < 3 else shape[-1]
+        self.channel_select.config(values=['All'] + [f'Channel {x}' for x in range(shape)])
+        self.channel_select.set('All')
+        self.selected = 0
+        self.offset = 0
+
+    def channel_mode_select(self, event=None):
+        if self.channel_select.get() == 'All':
+            self.master.per_channel_contrast = False
+            self.selected = -1
+        else:
+            self.master.per_channel_contrast = True
+            self.selected = int(self.channel_select.get()[-1])
+        self.offset = (self.selected + 1) * 2
+        self.working = True
+        self.master.min_display_value.set(self.master.display_values_array[self.offset])
+        self.master.max_display_value.set(self.master.display_values_array[self.offset + 1])
+        self.working = False
 
 
 class AboutPopup(tk.Toplevel):
