@@ -2,7 +2,7 @@
 ; SEE THE DOCUMENTATION FOR DETAILS ON CREATING INNO SETUP SCRIPT FILES!
 
 #define MyAppName "ImQuick"
-#define MyAppVersion "0.5 Beta"
+#define MyAppVersion "1.0.0"
 #define MyAppPublisher "David Stirling"
 #define MyAppURL "https://github.com/DavidStirling/ImQuick"
 #define MyAppExeName "ImQuick.exe"
@@ -22,7 +22,7 @@ DefaultDirName={pf64}\{#MyAppName}
 DisableProgramGroupPage=yes
 DisableDirPage=no
 OutputBaseFilename=ImQuick_setup
-SetupIconFile=resources\ImQuick.ico
+SetupIconFile=ImQuick.ico
 UninstallDisplayIcon={app}\resources\ImQuick.ico
 LicenseFile=LICENSE
 Compression=lzma
