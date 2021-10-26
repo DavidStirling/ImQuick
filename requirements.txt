@@ -3,3 +3,4 @@ imagetools
 Nuitka
 numpy
 Pillow
+tkinterdnd2

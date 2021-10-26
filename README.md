@@ -38,9 +38,7 @@ Right now ImQuick can open 2D images, 3D Z-stacks and time series. Faster loadin
 
 These instructions are specific to Windows. Without access to a Mac building for that OS is difficult, but if you're interested in helping out please do get in touch.
 
-First off, `git clone` this repository. You'll want Python 3.8+ installed and possibly a virtual env. Once that's set up, copy files from the latest [tkdnd build](https://github.com/petasis/tkdnd) into a `tkdnd` directory in the ImQuick root. This is an extension which adds drag and drop support to the Tkinter GUI toolkit.
-
-To make matters more complicated, you'll also need the `tkinterdnd` Python wrapper module [from here](https://sourceforge.net/projects/tkinterdnd/). It's not available on PyPi, so you'll need to copy this into the site-packages folder of your environment to install manually.
+First off, `git clone` this repository. You'll want Python 3.8+ installed and possibly a virtual env. 
 
 With that done, `pip install -e .` in the repository directory should install all the other dependencies. You can run `ImQuick.py` to start.
 

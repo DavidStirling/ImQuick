@@ -3,9 +3,6 @@
 # Canvas pan/zoom code adapted from https://stackoverflow.com/questions/41656176/tkinter-canvas-zoom-move-pan
 # Drag/drop utilises the tkdnd2 extension https://github.com/petasis/tkdnd
 # and wrapper https://sourceforge.net/projects/tkinterdnd/
-# Download zipped binaries from the links above and locate your Python installation.
-# Place the tkdnd2.9.2 folder into Python38\tcl
-# Place the TkinterDnD2 folder into Python38\Lib\site-packages
 
 import math
 import imageio
@@ -17,12 +14,15 @@ from PIL import Image, ImageTk
 import tkinter as tk
 import tkinter.ttk as ttk
 import tkinter.filedialog as tkfiledialog
-import TkinterDnD2 as tkDnD
+import tkinterdnd2 as tkDnD
 
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 
 SUPPORTED_EXTENSIONS = {".tif", ".tiff", ".gif", ".png", ".jpeg", ".jpg", ".bmp", ".npz", ".itk"}
-ICON_FILE = 'ImQuick.ico'
+if sys.platform == "win32":
+    ICON_FILE = 'ImQuick.ico'
+else:
+    ICON_FILE = 'ImQuick.png'
 INTERP_DEFS = {'Nearest': Image.NEAREST, 'Bilinear': Image.BILINEAR,
                'Bicubic': Image.BICUBIC, 'Lanczos': Image.ANTIALIAS}
 
@@ -51,7 +51,6 @@ class ImQuick(tk.Toplevel):
         super(ImQuick, self).__init__()
         self.master = master
         self.title(f"ImQuick {__version__}")
-        self.iconbitmap(resource_directory(ICON_FILE))
         self.geometry(f"500x500")
         self.file = None
         self.file_list = []
@@ -82,9 +81,6 @@ class ImQuick(tk.Toplevel):
 
         self.min_display_value.trace("w", self.update_min_display)
         self.max_display_value.trace("w", self.update_max_display)
-
-        style = ttk.Style()
-        style.configure('mini.TButton', justify='center', width=3, height=1, state='!disabled')
 
         self.menubar = self.create_menus()
 
@@ -721,7 +717,6 @@ class DisplayPopup(tk.Toplevel):
         self.master = master
         self.filename = ttk.Label(self, text="Info", anchor=tk.CENTER)
         self.title(f"Adjust Contrast")
-        self.iconbitmap(resource_directory(ICON_FILE))
         self.resizable(0, 0)
         self.transient(master)
         # Active channel ID
@@ -793,7 +788,6 @@ class AboutPopup(tk.Toplevel):
         self.title("About ImQuick")
         self.resizable(0, 0)
         self.transient(master)
-        self.iconbitmap(resource_directory(ICON_FILE))
         self.logo = Image.open(resource_directory(ICON_FILE)).resize((100, 100))
         self.logoimg = ImageTk.PhotoImage(self.logo)
         tk.Label(self, image=self.logoimg).pack(pady=(15, 0))
@@ -853,6 +847,20 @@ if __name__ == '__main__':
     else:
         file_in = ''
     root = tkDnD.TkinterDnD.Tk()
+    style = ttk.Style()
+    if sys.platform == "win32":
+        root.iconbitmap(resource_directory(ICON_FILE), default=True)
+    else:
+        root.icon = tk.PhotoImage(file=resource_directory(ICON_FILE))
+        root.wm_iconphoto(True, root.icon)
+        if sys.platform == 'darwin':
+            root.tk_setPalette(background='#D9D9D9', selectForeground='#ffffff', selectBackground='#0000ff')
+            try:
+                style.theme_use('alt')
+            except Exception as e:
+                print("Unable to set theme, icons may look strange: ", e)
+    style.configure('mini.TButton', justify='center', width=3, height=1, state='!disabled')
+
     root.wm_title("I am the window manager. If you can see me, something isn't right")
     root.withdraw()
     _load_tkdnd(root)
