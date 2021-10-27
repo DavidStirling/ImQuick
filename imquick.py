@@ -849,7 +849,7 @@ if __name__ == '__main__':
     root = tkDnD.TkinterDnD.Tk()
     style = ttk.Style()
     if sys.platform == "win32":
-        root.iconbitmap(resource_directory(ICON_FILE), default=True)
+        root.iconbitmap(True, resource_directory(ICON_FILE))
     else:
         root.icon = tk.PhotoImage(file=resource_directory(ICON_FILE))
         root.wm_iconphoto(True, root.icon)
